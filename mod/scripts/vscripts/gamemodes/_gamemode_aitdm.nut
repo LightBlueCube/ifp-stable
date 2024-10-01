@@ -29,14 +29,13 @@ global function AITdm_SetReapersPerTeam
 global function AITdm_SetLevelSpectres
 global function AITdm_SetLevelStalkers
 global function AITdm_SetLevelReapers
-global function SpawnIntroBatch_Threaded
-
 
 struct
 {
 	// Due to team based escalation everything is an array
-	array< array< string > > podEntities = [ [ "npc_soldier", "npc_spectre", "npc_stalker" ], [ "npc_soldier", "npc_spectre", "npc_stalker" ] ]
-	array< bool > reapers = [ true, true ]
+	array< int > levels = [] // Initilazed in `Spawner_Threaded`
+	array< array< string > > podEntities = [ [ "npc_soldier" ], [ "npc_soldier" ] ]
+	array< bool > reapers = [ false, false ]
 
 	// default settings
 	int squadsPerTeam = SQUADS_PER_TEAM
@@ -65,23 +64,16 @@ void function GamemodeAITdm_Init()
 	AiGameModes_SetNPCWeapons( "npc_spectre", [ "mp_weapon_hemlok_smg", "mp_weapon_doubletake", "mp_weapon_mastiff", "mp_weapon_rocket_launcher", "mp_weapon_mgl" ] )
 	AiGameModes_SetNPCWeapons( "npc_stalker", [ "mp_weapon_hemlok_smg", "mp_weapon_lstar", "mp_weapon_mastiff", "mp_weapon_rocket_launcher", "mp_weapon_mgl" ] )
 
-	//ScoreEvent_SetupEarnMeterValuesForMixedModes()
+	ScoreEvent_SetupEarnMeterValuesForMixedModes()
 
-	//use modded settings!
-	ScoreEvent_SetEarnMeterValues( "KillPilot", 0.10, 0.15 )
-	ScoreEvent_SetEarnMeterValues( "KillTitan", 0.0, 0.15 )
-	ScoreEvent_SetEarnMeterValues( "TitanKillTitan", 0.0, 0.0 ) // unsure
-	ScoreEvent_SetEarnMeterValues( "PilotBatteryStolen", 0.0, 0.10 ) // this actually just doesn't have overdrive in vanilla even
-	ScoreEvent_SetEarnMeterValues( "Headshot", 0.05, 0.0 )
-	ScoreEvent_SetEarnMeterValues( "FirstStrike", 0.4, 0.0 )
-	ScoreEvent_SetEarnMeterValues( "PilotBatteryApplied", 0.0, 0.35 )
-
-	// ai
-	ScoreEvent_SetEarnMeterValues( "KillGrunt", 0.05, 0.05, 0.2 )
-	ScoreEvent_SetEarnMeterValues( "KillSpectre", 0.05, 0.05, 0.2 )
-	ScoreEvent_SetEarnMeterValues( "LeechSpectre", 0.05, 0.05, 0.2 )
-	ScoreEvent_SetEarnMeterValues( "KillStalker", 0.05, 0.05, 0.2 )
-	ScoreEvent_SetEarnMeterValues( "KillSuperSpectre", 0.0, 0.2, 0.5 )
+	// modify override settings
+	// player-controlled stuff
+	ScoreEvent_SetEarnMeterValues( "KillPilot", 0.15, 0.05 )
+	ScoreEvent_SetEarnMeterValues( "EliminatePilot", 0.15, 0.05 )
+	ScoreEvent_SetEarnMeterValues( "PilotAssist", 0.15, 0.020001, 0.0 ) // if set to "0.03, 0.02", will display as "4%"
+	ScoreEvent_SetEarnMeterValues( "KillTitan", 0.2, 0.10, 0.0 )
+	ScoreEvent_SetEarnMeterValues( "PilotBatteryStolen", 0.0, 0.35 ) // this actually just doesn't have overdrive in vanilla even
+	ScoreEvent_SetEarnMeterValues( "FirstStrike", 0.15, 0.020001, 0.0 ) // if set to "0.03, 0.02", will display as "4%"
 }
 
 void function GiveFreeBatteryWhenFirstSpawn( entity player )
@@ -89,7 +81,7 @@ void function GiveFreeBatteryWhenFirstSpawn( entity player )
 	if( !player.s.firstSpawn )
 		return
 	entity battery = Rodeo_CreateBatteryPack()
-	battery.SetSkin( RandomInt( 10 ) == 0 ? 0 : 2 )	// 90% Yellow, 10% Green
+	battery.SetSkin( RandomInt( 2 ) == 0 ? 0 : 2 )	// 50% Yellow, 50% Green
 	Battery_StartFX( battery )
 	Rodeo_OnTouchBatteryPack_Internal( player, battery )
 	player.s.firstSpawn = false
@@ -201,9 +193,6 @@ void function OnPlaying()
 {
 	thread LastMinThink()
 
-	if( ![ "mp_wargames", "mp_crashsite3" ].contains( GetMapName() ) )
-		return
-
 	array<entity> points = RandomArrayElem( SpawnPoints_GetPilot() )
 	int i = 32
 	foreach( point in points )
@@ -214,7 +203,7 @@ void function OnPlaying()
 
 		vector pos = point.GetOrigin()
 		entity battery = Rodeo_CreateBatteryPack()
-		battery.SetSkin( RandomInt( 10 ) == 0 ? 0 : 2 )	// 90% Yellow, 10% Green
+		battery.SetSkin( RandomInt( 2 ) == 0 ? 0 : 2 )	// 50% Yellow, 50% Green
 		Battery_StartFX( battery )
 		battery.SetOrigin( pos )
 		battery.SetVelocity( AnglesToForward( < 0, RandomFloat( 360 ), 0 > ) * 400 + < 0, 0, 400 > )
@@ -245,10 +234,13 @@ void function OnPlayerConnected( entity player )
 void function HandleScoreEvent( entity victim, entity attacker, var damageInfo )
 {
 	// Basic checks
-	if ( victim == attacker || !( attacker.IsPlayer() || attacker.IsNPC() || attacker.IsTitan() ) || GetGameState() != eGameState.Playing )
+	if ( victim == attacker || !( attacker.IsPlayer() || attacker.IsTitan() ) || GetGameState() != eGameState.Playing )
 		return
 	// Hacked spectre filter
 	if ( victim.GetOwner() == attacker )
+		return
+	// NPC titans without an owner player will not count towards any team's score
+	if ( attacker.IsNPC() && attacker.IsTitan() && !IsValid( GetPetTitanOwner( attacker ) ) )
 		return
 
 	// Split score so we can check if we are over the score max
@@ -296,11 +288,8 @@ void function HandleScoreEvent( entity victim, entity attacker, var damageInfo )
 
 	// Add score + update network int to trigger the "Score +n" popup
 	AddTeamScore( attacker.GetTeam(), ScoreAdditionFromTeam( attacker.GetTeam(), teamScore ) )
-	if( !attacker.IsNPC() )
-	{
-		attacker.AddToPlayerGameStat( PGS_ASSAULT_SCORE, playerScore )
-		attacker.SetPlayerNetInt("AT_bonusPoints", attacker.GetPlayerGameStat( PGS_ASSAULT_SCORE ) )
-	}
+	attacker.AddToPlayerGameStat( PGS_ASSAULT_SCORE, playerScore )
+	attacker.SetPlayerNetInt("AT_bonusPoints", attacker.GetPlayerGameStat( PGS_ASSAULT_SCORE ) )
 }
 
 // When attrition starts both teams spawn ai on preset nodes, after that
@@ -405,13 +394,16 @@ void function SpawnIntroBatch_Threaded( int team )
 void function Spawner_Threaded( int team )
 {
 	svGlobal.levelEnt.EndSignal( "GameStateChanged" )
-	svGlobal.levelEnt.EndSignal( "NukeStart" )
 
 	// used to index into escalation arrays
 	int index = team == TEAM_MILITIA ? 0 : 1
 
+	file.levels = [ file.levelSpectres, file.levelSpectres ] // due we added settings, should init levels here!
+
 	while( true )
 	{
+		Escalate( team )
+
 		// TODO: this should possibly not count scripted npc spawns, probably only the ones spawned by this script
 		array<entity> npcs = GetNPCArrayOfTeam( team )
 		int count = npcs.len()
@@ -459,6 +451,43 @@ void function Aitdm_SpawnDropShip( entity node, int team )
 	thread AiGameModes_SpawnDropShip( node.GetOrigin(), node.GetAngles(), team, 4, SquadHandler )
 	wait 20
 }
+
+// Based on points tries to balance match
+void function Escalate( int team )
+{
+	int score = GameRules_GetTeamScore( team )
+	int index = team == TEAM_MILITIA ? 1 : 0
+	// This does the "Enemy x incoming" text
+	string defcon = team == TEAM_MILITIA ? "IMCdefcon" : "MILdefcon"
+
+	// Return if the team is under score threshold to escalate
+	if ( score < file.levels[ index ] || file.reapers[ index ] )
+		return
+
+	// Based on score escalate a team
+	switch ( file.levels[ index ] )
+	{
+		case file.levelSpectres:
+			file.levels[ index ] = file.levelStalkers
+			file.podEntities[ index ].append( "npc_spectre" )
+			SetGlobalNetInt( defcon, 2 )
+			return
+
+		case file.levelStalkers:
+			file.levels[ index ] = file.levelReapers
+			file.podEntities[ index ].append( "npc_stalker" )
+			SetGlobalNetInt( defcon, 3 )
+			return
+
+		case file.levelReapers:
+			file.reapers[ index ] = true
+			SetGlobalNetInt( defcon, 4 )
+			return
+	}
+
+	unreachable // hopefully
+}
+
 
 // Decides where to spawn ai
 // Each team has their "zone" where they and their ai spawns
