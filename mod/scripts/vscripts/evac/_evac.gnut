@@ -205,7 +205,7 @@ void function Evac( int evacTeam, float initialWait, float arrivalTime, float wa
 	EvacShipSetting evacShip = GetEvacShipSettingByTeam( evacTeam )
 
 	foreach( player in GetPlayerArray() )
-		NSSendAnnouncementMessageToPlayer( player, "成功撤離將在下局獲得隨機連殺獎勵", "", < 50, 50, 225 >, 255, 5 )
+		RUIQueue_NSSendAnnouncementMessageToPlayer( player, "成功撤離將在下局獲得隨機連殺獎勵", "", < 50, 50, 225 >, 255, 5 )
 
 	wait initialWait
 
@@ -323,7 +323,7 @@ void function Evac( int evacTeam, float initialWait, float arrivalTime, float wa
 			continue
 		if( player.GetTeam() != evacTeam )
 			continue
-		NSSendAnnouncementMessageToPlayer( player, "撤離艇已到達！", "成功撤離將在下局獲得隨機連殺獎勵", < 50, 50, 225 >, 255, 5 )
+		RUIQueue_NSSendAnnouncementMessageToPlayer( player, "撤離艇已到達！", "成功撤離將在下局獲得隨機連殺獎勵", < 50, 50, 225 >, 255, 5 )
 	}
 
 	// hover sound

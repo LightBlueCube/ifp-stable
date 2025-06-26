@@ -149,7 +149,7 @@ void function LastMinThink()
 	{
 		if( !IsValid( player ) )
 			continue
-		NSSendAnnouncementMessageToPlayer( player, teamScoreAddition +"倍分數獲取！", "最後1分鐘！", < 50, 50, 225 >, 255, 6 )
+		RUIQueue_NSSendAnnouncementMessageToPlayer( player, teamScoreAddition +"倍分數獲取！", "最後1分鐘！", < 50, 50, 225 >, 255, 6 )
 		EmitSoundOnEntityOnlyToPlayer( player, player, music )
 		EmitSoundOnEntityOnlyToPlayer( player, player, music )
 	}
